@@ -13,9 +13,13 @@ import org.geogebra.common.kernel.RegionParameters;
 import org.geogebra.common.kernel.StringTemplate;
 import org.geogebra.common.kernel.arithmetic.Equation;
 import org.geogebra.common.kernel.arithmetic.EquationValue;
+import org.geogebra.common.kernel.arithmetic.FunctionExpander;
+import org.geogebra.common.kernel.arithmetic.FunctionNVar;
+import org.geogebra.common.kernel.arithmetic.FunctionVariable;
 import org.geogebra.common.kernel.arithmetic.Functional2Var;
 import org.geogebra.common.kernel.arithmetic.MyDouble;
 import org.geogebra.common.kernel.arithmetic.NumberValue;
+import org.geogebra.common.kernel.arithmetic.ValidExpression;
 import org.geogebra.common.kernel.arithmetic.ValueType;
 import org.geogebra.common.kernel.geos.Dilateable;
 import org.geogebra.common.kernel.geos.GeoElement;
@@ -36,10 +40,12 @@ import org.geogebra.common.kernel.kernelND.GeoVectorND;
 import org.geogebra.common.kernel.kernelND.HasVolume;
 import org.geogebra.common.kernel.kernelND.Region3D;
 import org.geogebra.common.kernel.kernelND.RotateableND;
+import org.geogebra.common.kernel.kernelND.SurfaceEvaluable;
 import org.geogebra.common.kernel.matrix.CoordMatrix;
 import org.geogebra.common.kernel.matrix.CoordMatrix4x4;
 import org.geogebra.common.kernel.matrix.CoordSys;
 import org.geogebra.common.kernel.matrix.Coords;
+import org.geogebra.common.kernel.matrix.Coords3;
 import org.geogebra.common.plugin.GeoClass;
 import org.geogebra.common.util.DoubleUtil;
 import org.geogebra.common.util.debug.Log;
@@ -57,7 +63,7 @@ import org.geogebra.common.util.debug.Log;
  */
 public class GeoQuadric3D extends GeoQuadricND implements Functional2Var,
 		Region3D, Translateable, RotateableND, MirrorableAtPlane, Transformable,
-		Dilateable, HasVolume, GeoQuadric3DInterface, EquationValue {
+		Dilateable, HasVolume, GeoQuadric3DInterface, EquationValue, SurfaceEvaluable {
 
 	private static String[] vars3D = { "x\u00b2", "y\u00b2", "z\u00b2", "x y",
 			"x z", "y z", "x", "y", "z" };
@@ -3547,5 +3553,39 @@ public class GeoQuadric3D extends GeoQuadricND implements Functional2Var,
 			return getLoc().getMenu("SphereEquation");
 		}
 		return null;
+	}
+
+	@Override
+	public void evaluatePoint(double u, double v, Coords3 point) {
+		Coords coords = new Coords(0, 0);
+		evaluatePoint(u, v, coords);
+		point.set(coords.getX(), coords.getY(), coords.getZ());
+	}
+
+	@Override
+	public boolean evaluateNormal(Coords3 p, double u, double v, Coords3 normal) {
+		Coords n = evaluateNormal(u, v);
+		normal.set(n.getX(), n.getY(), n.getZ());
+		return true;
+	}
+
+	@Override
+	public void setDerivatives() {
+		// ToDo
+	}
+
+	@Override
+	public void resetDerivatives() {
+		// ToDo
+	}
+
+	@Override
+	public LevelOfDetail getLevelOfDetail() {
+		return LevelOfDetail.QUALITY;
+	}
+
+	@Override
+	public void setLevelOfDetail(LevelOfDetail lod) {
+		// ToDo
 	}
 }

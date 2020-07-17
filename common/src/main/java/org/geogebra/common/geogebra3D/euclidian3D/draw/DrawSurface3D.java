@@ -45,11 +45,13 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 	/** The function being rendered */
 	SurfaceEvaluable surfaceGeo;
 
-	// number of intervals in root mesh (for each parameters, if parameters
-	// delta are equals)
-	private static final short ROOT_MESH_INTERVALS_SPEED = 10;
-	private static final short ROOT_MESH_INTERVALS_SPEED_SQUARE = ROOT_MESH_INTERVALS_SPEED
-			* ROOT_MESH_INTERVALS_SPEED;
+	static class NotEnoughCornersException extends Exception {
+		private static final long serialVersionUID = 1L;
+
+		public NotEnoughCornersException(String message) {
+			super(message);
+		}
+	}
 
 	// number of split for boundary
 	private static final short BOUNDARY_SPLIT = 10;
@@ -102,11 +104,6 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 
 	/** Current culling box - set to view3d.(x|y|z)(max|min) */
 	private double[] cullingBox = new double[6];
-	// corners for drawing wireframe (bottom and right sides)
-	private Corner[] wireframeBottomCorners;
-	private Corner[] wireframeRightCorners;
-	private int wireframeBottomCornersLength;
-	private int wireframeRightCornersLength;
 
 	private Coords3 evaluatedPoint = newCoords3();
 	private Coords3 evaluatedNormal = newCoords3();
@@ -136,33 +133,12 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 
 	private Coords boundsMin = new Coords(3);
 	private Coords boundsMax = new Coords(3);
-	/**
-	 * first corner from root mesh
-	 */
-	private Corner firstCorner;
 
 	private CurveHitting curveHitting;
 
 	private ArrayList<GeoCurveCartesian3D> borders = new ArrayList<>();
 
-	private SurfaceParameter uParam = new SurfaceParameter();
-	private SurfaceParameter vParam = new SurfaceParameter();
-
-	private static class NotEnoughCornersException extends Exception {
-		private static final long serialVersionUID = 1L;
-		private DrawSurface3D surface;
-
-		public NotEnoughCornersException(DrawSurface3D surface,
-				String message) {
-			super(message);
-			this.surface = surface;
-		}
-
-		public void caught() {
-			printStackTrace();
-			surface.setNoRoomLeft();
-		}
-	}
+	private DrawWireframe wireframe;
 
 	/**
 	 * common constructor
@@ -185,11 +161,10 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 		}
 
 		splitsStartedNotFinished = false;
-
+		wireframe = new DrawWireframe(this, surfaceGeo);
 	}
 
 	private void setLevelOfDetail() {
-
 		SurfaceEvaluable.LevelOfDetail lod = surfaceGeo.getLevelOfDetail();
 
 		if (levelOfDetail == lod) {
@@ -342,16 +317,13 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 			// maybe set to null after redefine
 			surfaceGeo.setDerivatives();
 
-			// calc min/max values
-			uParam.initBorder(surfaceGeo, getView3D(), 0);
-			vParam.initBorder(surfaceGeo, getView3D(), 1);
-
-			if (DoubleUtil.isZero(uParam.delta)
-					|| DoubleUtil.isZero(vParam.delta)) {
-				setSurfaceIndex(-1);
-				setWireframeInvisible();
-				return true;
-			}
+			// TODO If init wireframe throws exception, call this.
+//			if (DoubleUtil.isZero(uParam.delta)
+//					|| DoubleUtil.isZero(vParam.delta)) {
+//				setSurfaceIndex(-1);
+//				setWireframeInvisible();
+//				return true;
+//			}
 
 			// max values
 			setLevelOfDetail();
@@ -365,25 +337,12 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 					+ maxRWDistanceNoAngleCheck);
 
 			// create root mesh
-			double uOverVFactor = uParam.delta / vParam.delta;
-			if (uOverVFactor > ROOT_MESH_INTERVALS_SPEED) {
-				uOverVFactor = ROOT_MESH_INTERVALS_SPEED;
-			} else if (uOverVFactor < 1.0 / ROOT_MESH_INTERVALS_SPEED) {
-				uOverVFactor = 1.0 / ROOT_MESH_INTERVALS_SPEED;
-			}
-			uParam.n = (int) (ROOT_MESH_INTERVALS_SPEED * uOverVFactor);
-			vParam.n = ROOT_MESH_INTERVALS_SPEED_SQUARE / uParam.n;
-			uParam.n += 2;
-			vParam.n += 2;
 
-			uParam.init(levelOfDetail);
-			vParam.init(levelOfDetail);
 
-			debug("grids: " + uParam.n + ", " + vParam.n);
 			cornerListIndex = 0;
 
 			try {
-				firstCorner = createRootMesh();
+				wireframe.initWireframe();
 
 				// split root mesh as start
 				currentSplitIndex = 0;
@@ -391,13 +350,15 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 				nextSplitIndex = 0;
 				drawListIndex = 0;
 				notDrawn = 0;
-				splitRootMesh(firstCorner);
+				wireframe.splitRootMesh();
+//				splitRootMesh(firstCorner);
 				debug("\nnot drawn after split root mesh: " + notDrawn);
 
 				// now splitted root mesh is ready
 				drawFromScratch = false;
-			} catch (NotEnoughCornersException e) {
-				e.caught();
+			} catch (Exception e) {
+//				e.caught();
+				setNoRoomLeft();
 			}
 		}
 
@@ -415,7 +376,7 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 		try {
 			stillRoomLeft = split();
 		} catch (NotEnoughCornersException e) {
-			e.caught();
+			setNoRoomLeft();
 		}
 
 		// time = System.currentTimeMillis() - time;
@@ -463,12 +424,6 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 			// still room left and still split to do: still to update
 			return false;
 		}
-
-		// time = System.currentTimeMillis() - time;
-		// if (time > 0){
-		// debug("draw : "+time);
-		// }
-
 	}
 
 	/**
@@ -518,7 +473,7 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 					nextSplit[i].split(true);
 				}
 			} catch (NotEnoughCornersException e) {
-				e.caught();
+				setNoRoomLeft();
 			}
 			debug("\n--- draw size : " + drawListIndex);
 			if (drawListIndex > 0) {
@@ -575,11 +530,6 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 	}
 
 	private void drawWireframe(Renderer renderer) {
-
-		if (!wireframeNeeded()) {
-			return;
-		}
-
 		int thickness = getGeoElement().getLineThickness();
 		if (thickness == 0) {
 			setWireframeInvisible();
@@ -596,72 +546,7 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 
 		oldThickness = thickness;
 
-		PlotterBrush brush = renderer.getGeometryManager().getBrush();
-
-		// point were already scaled
-		renderer.getGeometryManager().setScalerIdentity();
-
-		setPackCurve(true);
-		brush.start(getReusableGeometryIndex());
-		brush.setThickness(thickness, (float) getView3D().getScale());
-		brush.setAffineTexture(0f, 0f);
-		brush.setLength(1f);
-
-		for (int i = 0; i < wireframeBottomCornersLength; i++) {
-			Corner above = wireframeBottomCorners[i];
-			boolean currentPointIsDefined = isDefinedForWireframe(above);
-			if (currentPointIsDefined) {
-				brush.moveTo(above.p.getXd(), above.p.getYd(), above.p.getZd());
-			}
-			boolean lastPointIsDefined = currentPointIsDefined;
-			above = above.a;
-			while (above != null) {
-				currentPointIsDefined = isDefinedForWireframe(above);
-				if (currentPointIsDefined) {
-					if (lastPointIsDefined) {
-						brush.drawTo(above.p.getXd(), above.p.getYd(),
-								above.p.getZd(), true);
-					} else {
-						brush.moveTo(above.p.getXd(), above.p.getYd(),
-								above.p.getZd());
-					}
-				}
-				lastPointIsDefined = currentPointIsDefined;
-				above = above.a;
-			}
-			brush.endPlot();
-		}
-
-		for (int i = 0; i < wireframeRightCornersLength; i++) {
-			Corner left = wireframeRightCorners[i];
-			boolean currentPointIsDefined = isDefinedForWireframe(left);
-			if (currentPointIsDefined) {
-				brush.moveTo(left.p.getXd(), left.p.getYd(), left.p.getZd());
-			}
-			boolean lastPointIsDefined = currentPointIsDefined;
-			left = left.l;
-			while (left != null) {
-				currentPointIsDefined = isDefinedForWireframe(left);
-				if (currentPointIsDefined) {
-					if (lastPointIsDefined) {
-						brush.drawTo(left.p.getXd(), left.p.getYd(),
-								left.p.getZd(), true);
-					} else {
-						brush.moveTo(left.p.getXd(), left.p.getYd(),
-								left.p.getZd());
-					}
-				}
-				lastPointIsDefined = currentPointIsDefined;
-				left = left.l;
-			}
-			brush.endPlot();
-		}
-
-		setGeometryIndex(brush.end());
-		endPacking();
-
-		// point were already scaled
-		renderer.getGeometryManager().setScalerView();
+		wireframe.drawWireframe(renderer);
 	}
 
 	@Override
@@ -767,146 +652,6 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 			}
 			enlargeBounds(min, max, boundsMin, boundsMax);
 		}
-	}
-
-	private Corner createRootMesh() throws NotEnoughCornersException {
-		if (wireframeNeeded()) {
-			wireframeBottomCorners = new Corner[uParam.getCornerCount()];
-			wireframeRightCorners = new Corner[vParam.getCornerCount()];
-		}
-
-		Corner bottomRight = newCorner(uParam.borderMax, vParam.borderMax);
-		Corner first = bottomRight;
-
-		wireframeBottomCornersLength = 0;
-		wireframeRightCornersLength = 0;
-		int wireFrameSetU = uParam.wireFrameStep,
-				wireFrameSetV = vParam.wireFrameStep;
-		if (wireframeNeeded()) {
-			if (uParam.wireframeUnique) {
-				wireFrameSetU = 0;
-			}
-			if (uParam.wireframeBorder == 1) { // draw edges
-				wireframeBottomCorners[0] = first;
-				wireframeBottomCornersLength = 1;
-				wireFrameSetU = 1;
-			}
-			if (vParam.wireframeUnique) {
-				wireFrameSetV = 0;
-			}
-			if (vParam.wireframeBorder == 1) { // draw edges
-				wireframeRightCorners[0] = first;
-				wireframeRightCornersLength = 1;
-				wireFrameSetV = 1;
-			}
-		}
-
-		// first row
-		Corner right = bottomRight;
-		int uN = uParam.n;
-		for (int i = 0; i < uN - 1; i++) {
-			right = addLeftToMesh(right, uParam.max - (uParam.delta * i) / uN,
-					vParam.borderMax);
-			if (wireframeNeeded()) {
-				if (wireFrameSetU == uParam.wireFrameStep) { // set wireframe
-					wireframeBottomCorners[wireframeBottomCornersLength] = right;
-					wireframeBottomCornersLength++;
-					if (uParam.wireframeUnique) {
-						wireFrameSetU++;
-					} else {
-						wireFrameSetU = 1;
-					}
-				} else {
-					wireFrameSetU++;
-				}
-			}
-		}
-		right = addLeftToMesh(right, uParam.borderMin, vParam.borderMax);
-		if (wireframeNeeded()) {
-			if (uParam.wireframeBorder == 1) {
-				wireframeBottomCorners[wireframeBottomCornersLength] = right;
-				wireframeBottomCornersLength++;
-			}
-		}
-		int vN = vParam.n;
-		// all intermediate rows
-		for (int j = 0; j < vN - 1; j++) {
-			bottomRight = addRowAboveToMesh(bottomRight,
-					vParam.max - (vParam.delta * j) / vN, uParam.borderMin,
-					uParam.borderMax, uParam.max, uN);
-			if (wireframeNeeded()) {
-				if (wireFrameSetV == vParam.wireFrameStep) { // set wireframe
-					wireframeRightCorners[wireframeRightCornersLength] = bottomRight;
-					wireframeRightCornersLength++;
-					if (vParam.wireframeUnique) {
-						wireFrameSetV++;
-					} else {
-						wireFrameSetV = 1;
-					}
-				} else {
-					wireFrameSetV++;
-				}
-			}
-		}
-
-		// last row
-		bottomRight = addRowAboveToMesh(bottomRight, vParam.borderMin,
-				uParam.borderMin, uParam.borderMax, uParam.max, uN);
-		if (wireframeNeeded()) {
-			if (vParam.wireframeBorder == 1) {
-				wireframeRightCorners[wireframeRightCornersLength] = bottomRight;
-				wireframeRightCornersLength++;
-			}
-		}
-
-		return first;
-	}
-
-	final private Corner addLeftToMesh(Corner right, double u, double v)
-			throws NotEnoughCornersException {
-		Corner left = newCorner(u, v);
-		right.l = left;
-		return left;
-	}
-
-	final private Corner addRowAboveToMesh(Corner bottomRight, double v,
-			double uBorderMin, double uBorderMax, double uMax, int uN)
-			throws NotEnoughCornersException {
-		Corner below = bottomRight;
-		Corner right = newCorner(uBorderMax, v);
-		below.a = right;
-		for (int i = 0; i < uN - 1; i++) {
-			right = addLeftToMesh(right, uMax - (uParam.delta * i) / uN, v);
-			below = below.l;
-			below.a = right;
-		}
-		right = addLeftToMesh(right, uBorderMin, v);
-		below = below.l;
-		below.a = right;
-
-		return bottomRight.a;
-	}
-
-	private static void splitRootMesh(Corner first)
-			throws NotEnoughCornersException {
-
-		Corner nextAbove, nextLeft;
-
-		Corner current = first;
-		while (current.a != null) {
-			nextAbove = current.a;
-			while (current.l != null) {
-				nextLeft = current.l;
-				if (nextLeft.a == null) { // already splitted by last row
-					nextLeft = nextLeft.l;
-				}
-				// Log.debug(current.u + "," + current.v);
-				current.split(false);
-				current = nextLeft;
-			}
-			current = nextAbove;
-		}
-
 	}
 
 	private boolean split() throws NotEnoughCornersException {
@@ -1108,31 +853,6 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 		 *            surface plotter
 		 */
 		public void drawAsNextToSplit(PlotterSurface surface) {
-
-			// if (this.p.isNotFinalUndefined()){
-			// if (a.p.isNotFinalUndefined()){
-			// if (l.p.isNotFinalUndefined()){
-			// drawTriangle(surface, this, a, l);
-			// if (l.a.p.isNotFinalUndefined()){
-			// drawTriangle(surface, l, a, l.a);
-			// }
-			// }else{
-			// if (l.a.p.isNotFinalUndefined()){
-			// drawTriangle(surface, this, a, l.a);
-			// }
-			// }
-			// }else{
-			// if (l.p.isNotFinalUndefined() && l.a.p.isNotFinalUndefined()){
-			// drawTriangle(surface, this, l.a, l);
-			// }
-			// }
-			// }else{ // this undefined
-			// if (l.p.isNotFinalUndefined() && a.p.isNotFinalUndefined() &&
-			// l.a.p.isNotFinalUndefined()){
-			// drawTriangle(surface, l, a, l.a);
-			// }
-			// }
-
 			drawAsStillToSplit(surface);
 
 		}
@@ -2911,7 +2631,7 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 	}
 
 	/**
-	 * 
+	 *
 	 * @param u
 	 *            first parameter
 	 * @param v
@@ -2923,7 +2643,7 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 	protected Corner newCorner(double u, double v)
 			throws NotEnoughCornersException {
 		if (cornerListIndex >= cornerListSize) {
-			throw new NotEnoughCornersException(this, "Index " + cornerListIndex
+			throw new NotEnoughCornersException("Index " + cornerListIndex
 					+ " is larger than size " + cornerListSize);
 		}
 		Corner c = cornerList[cornerListIndex];
@@ -2944,7 +2664,7 @@ public class DrawSurface3D extends Drawable3DSurfaces implements HasZPick {
 	 */
 	protected Corner newCorner() throws NotEnoughCornersException {
 		if (cornerListIndex >= cornerListSize) {
-			throw new NotEnoughCornersException(this, "Index " + cornerListIndex
+			throw new NotEnoughCornersException("Index " + cornerListIndex
 					+ " is larger than size " + cornerListSize);
 		}
 		Corner c = cornerList[cornerListIndex];

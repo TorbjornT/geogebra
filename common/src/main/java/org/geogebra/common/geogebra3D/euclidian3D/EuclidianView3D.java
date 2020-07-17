@@ -705,7 +705,8 @@ public abstract class EuclidianView3D extends EuclidianView
 				break;
 
 			case QUADRIC:
-				d = new DrawQuadric3D(this, (GeoQuadric3D) geo);
+				d = new DrawSurface3D(this, (GeoQuadric3D) geo);
+//				d = new DrawQuadric3D(this, (GeoQuadric3D) geo);
 				break;
 
 			case QUADRIC_PART:

@@ -101,7 +101,6 @@ public class SurfaceParameter {
 		borderMin = surfaceGeo.getMinParameter(index);
 		borderMax = surfaceGeo.getMaxParameter(index);
 		step = Double.NaN;
-		step = Double.NaN;
 
 		if (((GeoElement) surfaceGeo).isGeoFunctionNVar()
 				|| (surfaceGeo instanceof GeoFunction)) {
@@ -119,7 +118,8 @@ public class SurfaceParameter {
 
 			// wireframe follows the grid
 			step = view3d.getAxisNumberingDistance(index);
-		} else if (((GeoSurfaceCartesianND) surfaceGeo)
+		} else if ((surfaceGeo instanceof GeoSurfaceCartesianND) &&
+				((GeoSurfaceCartesianND) surfaceGeo)
 				.isSurfaceOfRevolutionAroundOx()) {
 			// cartesian surface of revolution
 			if (index == 0) {
@@ -136,7 +136,13 @@ public class SurfaceParameter {
 			// cartesian surface NOT of revolution
 			// draw borders for u and v
 			wireframeBorder = 1;
+			step = view3d.getAxisNumberingDistance(index);
 		}
+
+		borderMin = view3d.getClippingCubeDrawable()
+				.getMinMax()[index][0];
+		borderMax = view3d.getClippingCubeDrawable()
+				.getMinMax()[index][1];
 
 		delta = borderMax - borderMin;
 	}
