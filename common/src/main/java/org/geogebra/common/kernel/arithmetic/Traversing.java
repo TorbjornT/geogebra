@@ -59,6 +59,33 @@ public interface Traversing {
 	public ExpressionValue process(final ExpressionValue ev);
 
 	/**
+	 * Replace non-existing commands in inputboxes with implicit multiplication
+	 * e.g. gL(L+1) -> g*L*(L+1)
+	 */
+	Traversing INPUTBOX_COMMAND_REPLACER = new Traversing() {
+		@Override
+		public ExpressionValue process(ExpressionValue ev) {
+			if (!(ev instanceof Command)) {
+				return ev;
+			}
+
+			Command c = (Command) ev;
+			Kernel kernel = c.getKernel();
+
+			// Remove this check when we disable commands in input boxes
+			if (kernel.getAlgebraProcessor().isCommandAvailable(c.getName())
+					|| c.getArgumentNumber() != 1) {
+				return c;
+			}
+
+			Variable geoVar = new Variable(kernel, c.getName());
+			ExpressionValue geoExp = geoVar.resolveAsExpressionValue(SymbolicMode.NONE, true);
+
+			return c.getArgument(0).traverse(this).wrap().multiply(geoExp);
+		}
+	};
+
+	/**
 	 * Replaces one object by another
 	 */
 	public class Replacer implements Traversing {
