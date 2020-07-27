@@ -8,6 +8,8 @@ import java.util.Map.Entry;
 import org.geogebra.common.kernel.Kernel;
 import org.geogebra.common.kernel.commands.CommandNotLoadedError;
 import org.geogebra.common.kernel.geos.GeoElement;
+import org.geogebra.common.move.events.BaseEvent;
+import org.geogebra.common.move.views.EventRenderable;
 import org.geogebra.common.plugin.Event;
 import org.geogebra.common.plugin.ScriptManager;
 import org.geogebra.common.plugin.script.JsScript;
@@ -20,7 +22,7 @@ import com.google.gwt.core.client.JsArrayString;
 /**
  * Provides JavaScript scripting for objects and initializes the public API.
  */
-public class ScriptManagerW extends ScriptManager {
+public class ScriptManagerW extends ScriptManager implements EventRenderable {
 
 	@ExternalAccess
 	private JavaScriptObject exportedApi;
@@ -232,5 +234,10 @@ public class ScriptManagerW extends ScriptManager {
 
 	public JavaScriptObject getApi() {
 		return exportedApi;
+	}
+
+	@Override
+	public void renderEvent(BaseEvent event) {
+		jsEnabled = !app.isMebis() || app.getLoginOperation().isTeacherLoggedIn();
 	}
 }

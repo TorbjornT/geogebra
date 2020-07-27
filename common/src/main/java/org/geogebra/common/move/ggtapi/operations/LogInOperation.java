@@ -220,9 +220,12 @@ public abstract class LogInOperation extends BaseOperation<EventRenderable> {
 	 * @return whether current user can share materials
 	 */
 	public boolean canUserShare() {
-		return this.getGeoGebraTubeAPI()
-				.canUserShare(getModel().getLoggedInUser() == null
-				|| getModel().getLoggedInUser().isStudent());
+		return getGeoGebraTubeAPI().canUserShare(!isTeacherLoggedIn());
+	}
+
+	public boolean isTeacherLoggedIn() {
+		return getModel().getLoggedInUser() != null
+				&& !getModel().getLoggedInUser().isStudent();
 	}
 
 	/**
